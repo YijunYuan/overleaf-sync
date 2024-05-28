@@ -9,6 +9,7 @@
 # Version: 1.2.0
 ##################################################
 
+import base64
 import fnmatch
 import glob
 import io
@@ -171,14 +172,36 @@ def main(ctx, local, remote, project_name, cookie_path, sync_path, olignore_path
               'verbose',
               is_flag=True,
               help="Enable extended error logging.")
-def login(cookie_path, verbose):
+@click.option('-vb64',
+              '--view_base64',
+              'vb64',
+              is_flag=True,
+              help="View the base64 encoded Overleaf login credentials.")
+@click.option('-b64i',
+              '--base64_input',
+              'base64_input',
+              default=None,
+              type=str,
+              help="Base64 encoded input for the Overleaf login credentials.")
+def login(cookie_path, base64_input, vb64, verbose):
+    if vb64:
+        if not os.path.isfile(cookie_path):
+            raise click.ClickException(
+                "Persisted Overleaf cookie not found. Please login or check store path."
+            )
+
+        with open(cookie_path, 'rb') as f:
+            store = pickle.load(f)
+
+        click.echo("\033[1;34m{}\033[0m".format(base64.b64encode(pickle.dumps(store)).decode()))
+        return
     if os.path.isfile(cookie_path) and not click.confirm(
             'Persisted Overleaf cookie already exist. Do you want to override it?'
     ):
         return
     click.clear()
     execute_action(
-        lambda: login_handler(cookie_path), "Login",
+        lambda: login_handler(cookie_path,base64_input), "Login",
         "Login successful. Cookie persisted as `" +
         click.format_filename(cookie_path) + "`. You may now sync your project.",
         "Login failed. Please try again.", verbose)
@@ -284,8 +307,13 @@ def download_pdf(project_name, download_path, cookie_path, verbose):
                    "Downloading project's PDF failed. Please try again.", verbose)
 
 
-def login_handler(path):
-    store = olbrowserlogin.login()
+def login_handler(path, base64_input:str = None):
+    if base64_input is not None:
+        store = pickle.loads(base64.b64decode(base64_input.encode()))
+    else:
+        store = olbrowserlogin.login()
+        print("\033[5;32m\nPlease paste the following base64 sting to OVERLEAF_CREDENTIALS_BASE64 in the secret of your GitHub repo:\033[0m","\033[1;34m\n\n{}\n\n\033[0m".format(base64.b64encode(pickle.dumps(store)).decode()))
+
     if store is None:
         return False
     with open(path, 'wb+') as f:
