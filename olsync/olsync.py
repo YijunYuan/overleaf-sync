@@ -64,6 +64,18 @@ except ImportError:
               default=".",
               type=click.Path(exists=True),
               help="Path of the project to sync.")
+@click.option('-dc',
+              '--delete_choice',
+              'delete_choice',
+              default=None,
+              type=click.Choice(['d', 'r', 'i']),
+              help="Choice for deleted files. [d]elete, [r]estore or [i]gnore.")
+@click.option('-ko',
+              '--keep_old',
+              'keep_old',
+              default=None,
+              type=bool,
+              help="Keep old file version if last-edit time stamp is older than the current on. [True/False].")
 @click.option(
     '-i',
     '--olignore',
@@ -80,7 +92,7 @@ except ImportError:
               help="Enable extended error logging.")
 @click.version_option(package_name='overleaf-sync')
 @click.pass_context
-def main(ctx, local, remote, project_name, cookie_path, sync_path, olignore_path,
+def main(ctx, local, remote, project_name, cookie_path, sync_path, olignore_path, delete_choice, keep_old,
          verbose):
     if ctx.invoked_subcommand is None:
         if not os.path.isfile(cookie_path):
@@ -118,6 +130,8 @@ def main(ctx, local, remote, project_name, cookie_path, sync_path, olignore_path
 
         if remote or sync:
             sync_func(
+                old_choice=keep_old,
+                del_choice=delete_choice,
                 files_from=zip_file.namelist(),
                 deleted_files=[
                     f for f in olignore_keep_list(olignore_path)
@@ -139,6 +153,8 @@ def main(ctx, local, remote, project_name, cookie_path, sync_path, olignore_path
                 verbose=verbose)
         if local or sync:
             sync_func(
+                old_choice=keep_old,
+                del_choice=delete_choice,
                 files_from=olignore_keep_list(olignore_path),
                 deleted_files=[
                     f for f in zip_file.namelist()
@@ -345,7 +361,9 @@ def write_file(path, content):
         f.write(content)
 
 
-def sync_func(files_from,
+def sync_func(del_choice,
+              old_choice,
+              files_from,
               deleted_files,
               create_file_at_to,
               delete_file_at_to,
@@ -370,12 +388,13 @@ def sync_func(files_from,
     for name in files_from:
         if from_exists_in_to(name):
             if not from_equal_to_to(name):
-                if not from_newer_than_to(name) and not click.confirm(
+                if not from_newer_than_to(name):
+                    if (old_choice is not None and old_choice) or not click.confirm(
                         '\n-> Warning: last-edit time stamp of file <%s> from [%s] is older than [%s].\nContinue to '
                         'overwrite with an older version?' %
                     (name, from_name, to_name)):
-                    not_sync_list.append(name)
-                    continue
+                        not_sync_list.append(name)
+                        continue
 
                 update_list.append(name)
             else:
@@ -384,12 +403,15 @@ def sync_func(files_from,
             newly_add_list.append(name)
 
     for name in deleted_files:
-        delete_choice = click.prompt(
-            '\n-> Warning: file <%s> does not exist on [%s] anymore (but it still exists on [%s]).'
-            '\nShould the file be [d]eleted, [r]estored or [i]gnored?' %
-            (name, from_name, to_name),
-            default="i",
-            type=click.Choice(['d', 'r', 'i']))
+        if del_choice is None:
+            delete_choice = click.prompt(
+                '\n-> Warning: file <%s> does not exist on [%s] anymore (but it still exists on [%s]).'
+                '\nShould the file be [d]eleted, [r]estored or [i]gnored?' %
+                (name, from_name, to_name),
+                default="i",
+                type=click.Choice(['d', 'r', 'i']))
+        else:
+            delete_choice = del_choice
         if delete_choice == "d":
             delete_list.append(name)
         elif delete_choice == "r":
