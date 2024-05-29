@@ -25,11 +25,11 @@ from yaspin import yaspin
 
 try:
     # Import for pip installation / wheel
-    import olsync.olbrowserlogin as olbrowserlogin
+    #import olsync.olbrowserlogin as olbrowserlogin
     from olsync.olclient import OverleafClient
 except ImportError:
     # Import for development
-    import olbrowserlogin
+    #import olbrowserlogin
     from olclient import OverleafClient
 
 
@@ -188,33 +188,13 @@ def main(ctx, local, remote, project_name, cookie_path, sync_path, olignore_path
               'verbose',
               is_flag=True,
               help="Enable extended error logging.")
-@click.option('-vb64',
-              '--view_base64',
-              'vb64',
-              is_flag=True,
-              help="View the base64 encoded Overleaf login credentials.")
 @click.option('-b64i',
               '--base64_input',
               'base64_input',
               default=None,
               type=str,
               help="Base64 encoded input for the Overleaf login credentials.")
-def login(cookie_path, base64_input, vb64, verbose):
-    if vb64:
-        if not os.path.isfile(cookie_path):
-            raise click.ClickException(
-                "Persisted Overleaf cookie not found. Please login or check store path."
-            )
-
-        with open(cookie_path, 'rb') as f:
-            store = pickle.load(f)
-
-        click.echo("\033[1;34m{}\033[0m".format(base64.b64encode(pickle.dumps(store)).decode()))
-        return
-    if os.path.isfile(cookie_path) and not click.confirm(
-            'Persisted Overleaf cookie already exist. Do you want to override it?'
-    ):
-        return
+def login(cookie_path, base64_input, verbose):
     click.clear()
     execute_action(
         lambda: login_handler(cookie_path,base64_input), "Login",
@@ -324,11 +304,7 @@ def download_pdf(project_name, download_path, cookie_path, verbose):
 
 
 def login_handler(path, base64_input:str = None):
-    if base64_input is not None:
-        store = pickle.loads(base64.b64decode(base64_input.encode()))
-    else:
-        store = olbrowserlogin.login()
-        print("\033[5;32m\nPlease paste the following base64 sting to OVERLEAF_CREDENTIALS_BASE64 in the secret of your GitHub repo:\033[0m","\033[1;34m\n\n{}\n\n\033[0m".format(base64.b64encode(pickle.dumps(store)).decode()))
+    store = pickle.loads(base64.b64decode(base64_input.encode()))
 
     if store is None:
         return False
@@ -389,10 +365,11 @@ def sync_func(del_choice,
         if from_exists_in_to(name):
             if not from_equal_to_to(name):
                 if not from_newer_than_to(name):
-                    if (old_choice is not None and old_choice) or not click.confirm(
-                        '\n-> Warning: last-edit time stamp of file <%s> from [%s] is older than [%s].\nContinue to '
-                        'overwrite with an older version?' %
-                    (name, from_name, to_name)):
+                    if old_choice is None:
+                        raise click.ClickException(
+                            "Please specify a choice for older files."
+                        )
+                    if old_choice:
                         not_sync_list.append(name)
                         continue
 
@@ -404,12 +381,9 @@ def sync_func(del_choice,
 
     for name in deleted_files:
         if del_choice is None:
-            delete_choice = click.prompt(
-                '\n-> Warning: file <%s> does not exist on [%s] anymore (but it still exists on [%s]).'
-                '\nShould the file be [d]eleted, [r]estored or [i]gnored?' %
-                (name, from_name, to_name),
-                default="i",
-                type=click.Choice(['d', 'r', 'i']))
+            raise click.ClickException(
+                "Please specify a choice for deleted files."
+            )
         else:
             delete_choice = del_choice
         if delete_choice == "d":
